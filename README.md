@@ -11,6 +11,7 @@ FaceGuard is a lightweight, privacy-focused, production-ready Windows desktop ap
 
 ## Key Highlights
 
+- **Zero Facial Registration or Setup**: Detects human face presence rather than personal identity. You do not need to register, scan, or enroll your face beforehand; it works immediately out of the box.
 - **Hardware Agnostic**: Works with ordinary 2D webcams and built-in laptop cameras (DirectShow / Media Foundation). No Windows Hello, infrared, or depth sensors required.
 - **Privacy-Preserving**: 100% local CPU inference using a lightweight ONNX model via `tract-onnx`. Zero frames or biometric data saved or transmitted. Frames are immediately dropped from memory after single-frame inference.
 - **Zero Continuous Streaming**: The camera is activated strictly for a single frame every 20 seconds (configurable) and released immediately between checks.
