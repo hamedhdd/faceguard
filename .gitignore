@@ -1,0 +1,19 @@
+# Rust target directory
+/target
+Cargo.lock.backup
+
+# IDE and Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS metadata
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+
+# Logs and scratch
+*.log
+*.tmp
+node_modules/
