@@ -1,5 +1,10 @@
 # FaceGuard — Windows Face Presence Auto-Lock
 
+[![GitHub Repository](https://img.shields.io/badge/GitHub-hamedhdd%2Ffaceguard-181717?style=flat&logo=github)](https://github.com/hamedhdd/faceguard)
+[![Rust](https://img.shields.io/badge/Rust-1.88%2B-orange?style=flat&logo=rust)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue?style=flat&logo=windows)](https://microsoft.com)
+[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local%20CPU-success)](https://github.com/hamedhdd/faceguard)
+
 FaceGuard is a lightweight, privacy-focused, production-ready Windows desktop application built primarily in Rust. It utilizes your system's webcam and local edge neural network inference to verify physical presence, automatically locking your Windows interactive workstation whenever you step away—and crucially suspending all camera operations while locked.
 
 ---

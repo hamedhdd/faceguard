@@ -19,3 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dynamic System Tray**: System tray icon with visual state differentiation (Monitoring, Disabled, Locked Standby, Camera Error) and context menu controls.
 - **Windows Auto-Start Manager**: Clean registry management under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` requiring zero elevated permissions.
 - **Automated Test Suite**: 9 comprehensive test modules covering state machine transitions, threshold logic, error isolation, kill switch, scheduler cancellation, lock requests, locked standby, unlock resume, and config validation.
+- **Optimized Release Binary & Packaging**: Standalone 21.3 MB executable (`faceguard.exe`) compiled with Link-Time Optimization (LTO) and opt-level 3, packaged with model assets.
+- **GitHub Repository Synchronization**: Version control initialized and published to [https://github.com/hamedhdd/faceguard](https://github.com/hamedhdd/faceguard).
