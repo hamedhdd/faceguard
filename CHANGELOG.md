@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dashboard & Controls UI Expansion**: Added live identity recognition badge, real-time cosine similarity score display, enrollment action buttons, and threshold configuration.
 - **Expanded Automated Test Suite**: Added 4 new integration tests covering owner recognition matching, stranger-induced auto-locks, face enrollment lifecycle, and ONNX model loading (13/13 tests passing).
 
+### Fixed
+- **Tauri 2 IPC Capabilities & Global Object Injection**: Configured `withGlobalTauri: true` in `tauri.conf.json` and defined `capabilities/default.json` with permissions (`permissions/custom-commands.toml`) to resolve `undefined` return values from custom commands and allow direct communication between the frontend and Rust backend.
+
 ## [1.0.0] - 2026-11-14
 
 ### Added

@@ -1,0 +1,20 @@
+[[permission]]
+identifier = "allow-custom-commands"
+description = "Allows all FaceGuard custom IPC commands"
+commands.allow = [
+  "get_telemetry",
+  "get_config",
+  "save_config",
+  "enable_monitoring",
+  "disable_monitoring",
+  "resume_monitoring",
+  "lock_windows_now",
+  "list_cameras",
+  "test_camera",
+  "test_detection",
+  "set_autostart",
+  "get_autostart",
+  "enroll_face",
+  "clear_enrolled_face",
+  "test_recognition"
+]

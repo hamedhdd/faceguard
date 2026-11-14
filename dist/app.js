@@ -1,7 +1,17 @@
 // FaceGuard Frontend Controller
 
-const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : async (cmd, args) => {
-  console.log('Mock invoke:', cmd, args);
+const getInvoke = () => {
+  if (window.__TAURI__?.core?.invoke) return window.__TAURI__.core.invoke;
+  if (window.__TAURI__?.invoke) return window.__TAURI__.invoke;
+  return null;
+};
+
+const invoke = async (cmd, args = {}) => {
+  const tauriInvoke = getInvoke();
+  if (tauriInvoke) {
+    return await tauriInvoke(cmd, args);
+  }
+  console.warn('Tauri IPC not detected, running in preview mode:', cmd, args);
   if (cmd === 'get_telemetry') {
     return {
       state: 'monitoring',
@@ -18,7 +28,12 @@ const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : async (cmd, arg
       next_check_time: new Date(Date.now() + 20000).toISOString(),
       last_error: null,
       total_checks: 12,
-      total_locks: 0
+      total_locks: 0,
+      recognition_enabled: false,
+      recognition_threshold: 0.60,
+      is_enrolled: false,
+      last_similarity: 0.0,
+      last_recognized: null
     };
   }
   if (cmd === 'get_config') {
@@ -33,11 +48,21 @@ const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : async (cmd, arg
       minimize_to_tray: true,
       notifications_enabled: true,
       lock_on_missing_face: true,
-      grace_period_seconds: 0
+      grace_period_seconds: 0,
+      recognition_enabled: false,
+      recognition_threshold: 0.60,
+      enrolled_face: null
     };
   }
   if (cmd === 'list_cameras') {
     return [{ index: 0, name: 'HP HD Camera', is_default: true }];
+  }
+  if (cmd === 'enroll_face') {
+    return {
+      success: false,
+      confidence_percent: 0.0,
+      message: 'Connecting to camera hardware for enrollment...'
+    };
   }
   return {};
 };
@@ -294,18 +319,22 @@ document.getElementById('btnTestDetection').addEventListener('click', async () =
 // Face Recognition Operations
 document.getElementById('btnEnrollFace').addEventListener('click', async () => {
   const out = document.getElementById('recOutput');
-  out.textContent = 'Capturing frame and enrolling your face profile... Please look at the camera.';
+  out.textContent = 'Capturing frame and enrolling your face profile... Please look directly at the webcam.';
   try {
     const res = await invoke('enroll_face');
-    if (res.success) {
-      out.textContent = `[SUCCESS] ${res.message}\n` +
-        `Face Confidence: ${res.confidence_percent.toFixed(1)}%\n` +
-        `FaceGuard is now locked to your biometric profile.`;
-      addLogEntry(`Owner face enrolled successfully (${res.confidence_percent.toFixed(1)}% conf)`);
+    console.log('enroll_face response:', res);
+    if (res && res.success) {
+      const conf = res.confidence_percent !== undefined ? res.confidence_percent : (res.confidencePercent !== undefined ? res.confidencePercent : 0.0);
+      const msg = res.message || 'Owner face enrolled successfully!';
+      out.textContent = `[SUCCESS] ${msg}\n` +
+        `Face Confidence: ${Number(conf).toFixed(1)}%\n` +
+        `FaceGuard is now active and locked to your face profile.`;
+      addLogEntry(`Owner face enrolled successfully (${Number(conf).toFixed(1)}% conf)`);
       pollTelemetry();
     } else {
-      out.textContent = `[FAILED] ${res.message}`;
-      addLogEntry(`Face enrollment failed: ${res.message}`);
+      const msg = res?.message || res?.error || (typeof res === 'string' ? res : 'Could not detect face. Ensure camera is facing you with good lighting.');
+      out.textContent = `[FAILED] ${msg}`;
+      addLogEntry(`Face enrollment failed: ${msg}`);
     }
   } catch (err) {
     out.textContent = `[ERROR] Exception during enrollment: ${err}`;
@@ -317,17 +346,23 @@ document.getElementById('btnTestRecognition').addEventListener('click', async ()
   out.textContent = 'Analyzing camera frame for facial identity match...';
   try {
     const res = await invoke('test_recognition');
-    if (res.success) {
+    console.log('test_recognition response:', res);
+    if (res && res.success) {
+      const sim = res.similarity_percent !== undefined ? res.similarity_percent : (res.similarityPercent !== undefined ? res.similarityPercent : 0.0);
+      const thresh = res.threshold_percent !== undefined ? res.threshold_percent : (res.thresholdPercent !== undefined ? res.thresholdPercent : 60.0);
+      const isRec = res.is_recognized !== undefined ? res.is_recognized : res.isRecognized;
+      const isEnr = res.is_enrolled !== undefined ? res.is_enrolled : res.isEnrolled;
       out.textContent = `[RECOGNITION TEST RESULT]\n` +
-        `Enrolled: ${res.is_enrolled ? 'YES' : 'NO'}\n` +
-        `Similarity Score: ${res.similarity_percent.toFixed(1)}%\n` +
-        `Threshold Required: ${res.threshold_percent.toFixed(1)}%\n` +
-        `Verdict: ${res.is_recognized ? 'AUTHORIZED OWNER (Match)' : 'STRANGER / UNAUTHORIZED (Mismatch)'}\n` +
-        `Message: ${res.message}`;
-      addLogEntry(`Recognition test: match=${res.is_recognized}, sim=${res.similarity_percent.toFixed(1)}%`);
+        `Enrolled Profile: ${isEnr ? 'YES' : 'NO'}\n` +
+        `Similarity Score: ${Number(sim).toFixed(1)}%\n` +
+        `Match Threshold: ${Number(thresh).toFixed(1)}%\n` +
+        `Verdict: ${isRec ? 'AUTHORIZED OWNER (Match)' : 'STRANGER / UNAUTHORIZED (Mismatch)'}\n` +
+        `Message: ${res.message || ''}`;
+      addLogEntry(`Recognition test: match=${isRec}, sim=${Number(sim).toFixed(1)}%`);
       pollTelemetry();
     } else {
-      out.textContent = `[FAILED] ${res.message}`;
+      const msg = res?.message || res?.error || 'Could not test face recognition.';
+      out.textContent = `[FAILED] ${msg}`;
     }
   } catch (err) {
     out.textContent = `[ERROR] Exception during test: ${err}`;
