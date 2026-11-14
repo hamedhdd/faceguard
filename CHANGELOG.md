@@ -5,6 +5,17 @@ All notable changes to the FaceGuard project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-11-14
+
+### Added
+- **Local Face Identity Recognition**: Integrated edge neural network inference utilizing InsightFace MobileFaceNet (`models/face_recognition.onnx`, 13.6 MB) via pure-Rust `tract-onnx`.
+- **512-Dimensional Biometric Embedding Extraction**: High-precision normalized facial vector extraction with cosine similarity calculation.
+- **One-Click Face Enrollment**: Allows registering the owner's face directly from the webcam with live confidence verification.
+- **Stranger / Intruder Auto-Lock Policy**: Configurable protection policy that detects unknown faces or strangers sitting in front of the screen and automatically locks the Windows workstation.
+- **New Tauri IPC Endpoints**: Implemented `enroll_face`, `clear_enrolled_face`, and `test_recognition` commands.
+- **Dashboard & Controls UI Expansion**: Added live identity recognition badge, real-time cosine similarity score display, enrollment action buttons, and threshold configuration.
+- **Expanded Automated Test Suite**: Added 4 new integration tests covering owner recognition matching, stranger-induced auto-locks, face enrollment lifecycle, and ONNX model loading (13/13 tests passing).
+
 ## [1.0.0] - 2026-11-14
 
 ### Added

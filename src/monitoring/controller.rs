@@ -1,6 +1,6 @@
 use crate::camera::CameraCapture;
 use crate::config::AppConfig;
-use crate::detection::{DetectionSummary, FaceDetector};
+use crate::detection::{DetectionSummary, FaceDetector, FaceRecognizer, RecognitionSummary};
 use crate::state::{AppState, StateTracker};
 use crate::windows::{SessionEvent, SessionNotifier, WorkstationLocker};
 use chrono::{DateTime, Local};
@@ -27,6 +27,12 @@ pub struct TelemetrySnapshot {
     pub last_error: Option<String>,
     pub total_checks: u64,
     pub total_locks: u64,
+    // Face Recognition fields
+    pub recognition_enabled: bool,
+    pub recognition_threshold: f32,
+    pub is_enrolled: bool,
+    pub last_similarity: f32,
+    pub last_recognized: Option<bool>,
 }
 
 pub struct MonitoringController {
@@ -34,6 +40,7 @@ pub struct MonitoringController {
     pub state_tracker: Arc<StateTracker>,
     camera: Arc<dyn CameraCapture>,
     detector: Arc<dyn FaceDetector>,
+    recognizer: Arc<dyn FaceRecognizer>,
     locker: Arc<dyn WorkstationLocker>,
     session_notifier: Arc<dyn SessionNotifier>,
 
@@ -42,6 +49,8 @@ pub struct MonitoringController {
     total_checks_counter: AtomicU64,
     total_locks_counter: AtomicU64,
     last_confidence: RwLock<f32>,
+    last_similarity: RwLock<f32>,
+    last_recognized: RwLock<Option<bool>>,
     last_check_time: RwLock<Option<DateTime<Local>>>,
     last_detection_time: RwLock<Option<DateTime<Local>>>,
     next_check_time: RwLock<Option<DateTime<Local>>>,
@@ -60,6 +69,7 @@ impl MonitoringController {
         state_tracker: Arc<StateTracker>,
         camera: Arc<dyn CameraCapture>,
         detector: Arc<dyn FaceDetector>,
+        recognizer: Arc<dyn FaceRecognizer>,
         locker: Arc<dyn WorkstationLocker>,
         session_notifier: Arc<dyn SessionNotifier>,
     ) -> Arc<Self> {
@@ -69,12 +79,15 @@ impl MonitoringController {
             state_tracker,
             camera,
             detector,
+            recognizer,
             locker,
             session_notifier,
             failed_checks_counter: AtomicU32::new(0),
             total_checks_counter: AtomicU64::new(0),
             total_locks_counter: AtomicU64::new(0),
             last_confidence: RwLock::new(0.0),
+            last_similarity: RwLock::new(0.0),
+            last_recognized: RwLock::new(None),
             last_check_time: RwLock::new(None),
             last_detection_time: RwLock::new(None),
             next_check_time: RwLock::new(None),
@@ -142,9 +155,9 @@ impl MonitoringController {
         }
     }
 
-    /// Performs one discrete face presence detection check.
-    /// Captures a single frame, runs inference, releases frame immediately,
-    /// and evaluates absence threshold policy.
+    /// Performs one discrete face presence and identity verification check.
+    /// Captures a single frame, runs detection and optional recognition,
+    /// releases frame immediately, and evaluates absence/unauthorized policy.
     pub fn perform_check(&self) -> Result<DetectionSummary, String> {
         let cur_state = self.state_tracker.current();
         if cur_state == AppState::LockedStandby || cur_state == AppState::Disabled || cur_state == AppState::ShuttingDown {
@@ -155,7 +168,7 @@ impl MonitoringController {
         let now = Local::now();
         *self.last_check_time.write() = Some(now);
 
-        let (cam_idx, conf_thresh, min_size, missing_thresh, do_lock) = {
+        let (cam_idx, conf_thresh, min_size, missing_thresh, do_lock, rec_enabled, rec_thresh, enrolled_opt) = {
             let c = self.config.read();
             (
                 c.camera_index,
@@ -163,10 +176,13 @@ impl MonitoringController {
                 c.minimum_face_size,
                 c.missing_face_threshold,
                 c.lock_on_missing_face,
+                c.recognition_enabled,
+                c.recognition_threshold,
+                c.enrolled_face.clone(),
             )
         };
 
-        log::debug!("Starting presence check on camera {cam_idx}...");
+        log::debug!("Starting presence/recognition check on camera {cam_idx}...");
 
         // 1. Capture single frame
         let frame = match self.camera.capture_single_frame(cam_idx) {
@@ -185,7 +201,7 @@ impl MonitoringController {
         };
 
         // 2. Run face detection inference
-        let summary = match self.detector.detect(&frame, conf_thresh, min_size) {
+        let mut summary = match self.detector.detect(&frame, conf_thresh, min_size) {
             Ok(s) => s,
             Err(e) => {
                 let err_str = e.to_string();
@@ -196,19 +212,72 @@ impl MonitoringController {
             }
         };
 
-        // Explicitly drop captured frame immediately
-        drop(frame);
-
         *self.last_confidence.write() = summary.max_confidence;
 
-        // 3. Evaluate presence logic
+        // 3. Evaluate identity recognition if enabled and enrolled
+        let mut is_authorized = summary.is_face_present;
+
         if summary.is_face_present {
-            // Face detected! Reset absence counter
+            if let Some(ref face) = summary.primary_face {
+                if rec_enabled && enrolled_opt.is_some() {
+                    let target_emb = enrolled_opt.as_ref().unwrap();
+                    match self.recognizer.extract_embedding(&frame, face) {
+                        Ok(current_emb) => {
+                            let sim = self.recognizer.compute_similarity(&current_emb, target_emb);
+                            let matched = sim >= rec_thresh;
+                            *self.last_similarity.write() = sim;
+                            *self.last_recognized.write() = Some(matched);
+
+                            summary.recognition = Some(RecognitionSummary {
+                                is_recognized: matched,
+                                similarity_score: sim,
+                                threshold: rec_thresh,
+                                is_enrolled: true,
+                            });
+
+                            if matched {
+                                log::info!(
+                                    "Owner face recognized: similarity {:.1}% >= threshold {:.1}%",
+                                    sim * 100.0,
+                                    rec_thresh * 100.0
+                                );
+                                is_authorized = true;
+                            } else {
+                                log::warn!(
+                                    "Unrecognized face detected: similarity {:.1}% < threshold {:.1}% (Owner absent)",
+                                    sim * 100.0,
+                                    rec_thresh * 100.0
+                                );
+                                is_authorized = false;
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Face recognition embedding error: {e}");
+                            is_authorized = false;
+                        }
+                    }
+                } else {
+                    // Face presence mode: face detected is sufficient
+                    *self.last_similarity.write() = 0.0;
+                    *self.last_recognized.write() = None;
+                }
+            }
+        } else {
+            *self.last_similarity.write() = 0.0;
+            *self.last_recognized.write() = None;
+        }
+
+        // Explicitly drop captured frame immediately after processing
+        drop(frame);
+
+        // 4. Evaluate presence / authorization state
+        if is_authorized {
+            // Authorized owner confirmed! Reset absence counter
             self.failed_checks_counter.store(0, Ordering::Relaxed);
             *self.last_detection_time.write() = Some(summary.timestamp);
 
             log::info!(
-                "Presence confirmed: face detected with {:.1}% confidence (inference: {:.1}ms)",
+                "Presence authorized: face detected with {:.1}% confidence (inference: {:.1}ms)",
                 summary.max_confidence * 100.0,
                 summary.inference_duration_ms
             );
@@ -216,10 +285,10 @@ impl MonitoringController {
             let _ = self.state_tracker.transition(AppState::FaceDetected);
             let _ = self.state_tracker.transition(AppState::Monitoring);
         } else {
-            // Face missing!
+            // Face missing or unrecognized stranger!
             let failed = self.failed_checks_counter.fetch_add(1, Ordering::Relaxed) + 1;
             log::warn!(
-                "Face absent in frame! Failed checks: {}/{}",
+                "Authorized user absent in frame! Failed checks: {}/{}",
                 failed,
                 missing_thresh
             );
@@ -254,6 +323,97 @@ impl MonitoringController {
         }
 
         Ok(summary)
+    }
+
+    /// Enrolls the face currently visible to the camera as the authorized owner.
+    pub fn enroll_current_face(&self) -> Result<f32, String> {
+        let (cam_idx, conf_thresh, min_size) = {
+            let c = self.config.read();
+            (c.camera_index, c.confidence_threshold, c.minimum_face_size)
+        };
+
+        log::info!("Capturing frame for owner face enrollment...");
+        let frame = self.camera.capture_single_frame(cam_idx).map_err(|e| e.to_string())?;
+        let summary = self.detector.detect(&frame, conf_thresh, min_size).map_err(|e| e.to_string())?;
+
+        if !summary.is_face_present || summary.primary_face.is_none() {
+            return Err("No face detected in camera frame. Please look directly at the webcam with good lighting.".to_string());
+        }
+
+        let face = summary.primary_face.as_ref().unwrap();
+        let embedding = self.recognizer.extract_embedding(&frame, face).map_err(|e| e.to_string())?;
+
+        {
+            let mut cfg = self.config.write();
+            cfg.enrolled_face = Some(embedding);
+            cfg.recognition_enabled = true;
+            let _ = cfg.save();
+        }
+
+        *self.last_similarity.write() = 1.0;
+        *self.last_recognized.write() = Some(true);
+
+        log::info!("Owner face enrolled successfully! 512-D embedding saved.");
+        Ok(summary.max_confidence)
+    }
+
+    /// Clears the enrolled owner face profile.
+    pub fn clear_enrolled_face(&self) -> Result<(), String> {
+        {
+            let mut cfg = self.config.write();
+            cfg.enrolled_face = None;
+            cfg.recognition_enabled = false;
+            let _ = cfg.save();
+        }
+        *self.last_similarity.write() = 0.0;
+        *self.last_recognized.write() = None;
+        log::info!("Enrolled face profile cleared. System reverted to general presence mode.");
+        Ok(())
+    }
+
+    /// Tests face recognition on a live frame and returns the similarity score.
+    pub fn test_recognition(&self) -> Result<RecognitionSummary, String> {
+        let (cam_idx, conf_thresh, min_size, rec_thresh, enrolled_opt) = {
+            let c = self.config.read();
+            (
+                c.camera_index,
+                c.confidence_threshold,
+                c.minimum_face_size,
+                c.recognition_threshold,
+                c.enrolled_face.clone(),
+            )
+        };
+
+        let frame = self.camera.capture_single_frame(cam_idx).map_err(|e| e.to_string())?;
+        let summary = self.detector.detect(&frame, conf_thresh, min_size).map_err(|e| e.to_string())?;
+
+        if !summary.is_face_present || summary.primary_face.is_none() {
+            return Err("No face detected in test frame.".to_string());
+        }
+
+        let face = summary.primary_face.as_ref().unwrap();
+        let embedding = self.recognizer.extract_embedding(&frame, face).map_err(|e| e.to_string())?;
+
+        if let Some(target) = enrolled_opt {
+            let sim = self.recognizer.compute_similarity(&embedding, &target);
+            let matched = sim >= rec_thresh;
+            *self.last_similarity.write() = sim;
+            *self.last_recognized.write() = Some(matched);
+
+            Ok(RecognitionSummary {
+                is_recognized: matched,
+                similarity_score: sim,
+                threshold: rec_thresh,
+                is_enrolled: true,
+            })
+        } else {
+            Ok(RecognitionSummary {
+                is_recognized: false,
+                similarity_score: 0.0,
+                threshold: rec_thresh,
+                is_enrolled: false,
+            })
+        }
     }
 
     /// Manual workstation lock request.
@@ -359,13 +519,16 @@ impl MonitoringController {
 
     /// Returns a full snapshot of current telemetry for the UI dashboard.
     pub fn get_telemetry(&self) -> TelemetrySnapshot {
-        let (interval, thresh, conf_thresh, cam_idx) = {
+        let (interval, thresh, conf_thresh, cam_idx, rec_enabled, rec_thresh, is_enrolled) = {
             let c = self.config.read();
             (
                 c.detection_interval_seconds,
                 c.missing_face_threshold,
                 c.confidence_threshold,
                 c.camera_index,
+                c.recognition_enabled,
+                c.recognition_threshold,
+                c.enrolled_face.is_some(),
             )
         };
 
@@ -385,6 +548,11 @@ impl MonitoringController {
             last_error: self.last_error_message.read().clone(),
             total_checks: self.total_checks_counter.load(Ordering::Relaxed),
             total_locks: self.total_locks_counter.load(Ordering::Relaxed),
+            recognition_enabled: rec_enabled,
+            recognition_threshold: rec_thresh,
+            is_enrolled,
+            last_similarity: *self.last_similarity.read(),
+            last_recognized: *self.last_recognized.read(),
         }
     }
 

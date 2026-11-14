@@ -13,6 +13,30 @@ pub enum DetectionError {
     DecodeError(String),
 }
 
+#[derive(Debug, Error)]
+pub enum RecognitionError {
+    #[error("Failed to load face recognition model at {path}: {detail}")]
+    ModelLoadError { path: String, detail: String },
+    #[error("Failed to preprocess face crop: {0}")]
+    CropError(String),
+    #[error("Recognition inference failed: {0}")]
+    InferenceError(String),
+    #[error("Invalid embedding dimension or shape: {0}")]
+    DimensionError(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RecognitionSummary {
+    /// True if the detected face matched the enrolled owner profile
+    pub is_recognized: bool,
+    /// Cosine similarity score between detected face and enrolled profile (0.0 - 1.0)
+    pub similarity_score: f32,
+    /// Threshold used for matching
+    pub threshold: f32,
+    /// Whether an owner profile is enrolled
+    pub is_enrolled: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FaceDetection {
     /// Confidence score from 0.0 to 1.0
@@ -41,4 +65,7 @@ pub struct DetectionSummary {
     pub inference_duration_ms: f32,
     /// Timestamp of detection
     pub timestamp: chrono::DateTime<chrono::Local>,
+    /// Optional face recognition details if identity matching is active
+    #[serde(default)]
+    pub recognition: Option<RecognitionSummary>,
 }

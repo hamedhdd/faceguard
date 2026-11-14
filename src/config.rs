@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+fn default_recognition_threshold() -> f32 {
+    0.60
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppConfig {
     /// Whether face monitoring is active
@@ -26,6 +30,15 @@ pub struct AppConfig {
     pub lock_on_missing_face: bool,
     /// Optional grace period in seconds before locking (default: 0)
     pub grace_period_seconds: u64,
+    /// Whether owner face recognition matching is enforced (default: false)
+    #[serde(default)]
+    pub recognition_enabled: bool,
+    /// Minimum cosine similarity required to match enrolled face (0.10 - 0.99, default: 0.60)
+    #[serde(default = "default_recognition_threshold")]
+    pub recognition_threshold: f32,
+    /// 512-dimensional enrolled owner face embedding vector
+    #[serde(default)]
+    pub enrolled_face: Option<Vec<f32>>,
 }
 
 impl Default for AppConfig {
@@ -42,6 +55,9 @@ impl Default for AppConfig {
             notifications_enabled: true,
             lock_on_missing_face: true,
             grace_period_seconds: 0,
+            recognition_enabled: false,
+            recognition_threshold: 0.60,
+            enrolled_face: None,
         }
     }
 }
@@ -79,6 +95,13 @@ impl AppConfig {
             self.minimum_face_size = 16;
         } else if self.minimum_face_size > 400 {
             self.minimum_face_size = 400;
+        }
+
+        // Recognition threshold between 0.10 and 0.99
+        if self.recognition_threshold < 0.10 {
+            self.recognition_threshold = 0.10;
+        } else if self.recognition_threshold > 0.99 {
+            self.recognition_threshold = 0.99;
         }
 
         if self.grace_period_seconds > 300 {

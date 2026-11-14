@@ -138,6 +138,21 @@
         </div>
       </div>
 
+      <!-- Face Recognition & Identity Status Grid -->
+      <div class="grid-cols-2">
+        <div class="card">
+          <div class="stat-label">Face identity recognition</div>
+          <div id="metricRecMode" class="stat-value" style="font-size: 14px; margin-top: 4px;">Presence Only</div>
+          <div id="metricRecEnrolled" class="stat-sub">Owner Profile: Not Enrolled</div>
+        </div>
+
+        <div class="card">
+          <div class="stat-label">Last similarity score</div>
+          <div id="metricRecScore" class="stat-value tabular" style="font-size: 14px; margin-top: 4px;">--%</div>
+          <div id="metricRecStatus" class="stat-sub">Threshold: 60.0% match required</div>
+        </div>
+      </div>
+
       <!-- Activity Log -->
       <div class="card">
         <div class="section-title">Operational activity log</div>
@@ -180,6 +195,41 @@
             Lock Windows now
           </button>
         </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">Owner face enrollment & recognition</div>
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+          Register your face to enforce identity matching. When active, FaceGuard will only keep your workstation unlocked when <em>your</em> face is recognized, automatically locking Windows if an unknown person or stranger is sitting in front of your display.
+        </p>
+
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;">
+          <button id="btnEnrollFace" class="btn btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Enroll my face now
+          </button>
+
+          <button id="btnTestRecognition" class="btn btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Test face recognition
+          </button>
+
+          <button id="btnClearEnrollment" class="btn btn-danger">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+            Clear face profile
+          </button>
+        </div>
+
+        <div class="stat-label">Enrollment & recognition feedback</div>
+        <div id="recOutput" class="diag-box">Look directly at your webcam with good lighting, then click "Enroll my face now".</div>
       </div>
 
       <div class="card">
@@ -272,6 +322,29 @@
               <input type="checkbox" id="settingLockEnabled" checked>
               <span class="slider"></span>
             </label>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-name">Require owner face recognition</span>
+            <span class="setting-desc">Enforce facial identity recognition. Workstation will lock automatically for strangers.</span>
+          </div>
+          <div class="setting-control">
+            <label class="switch">
+              <input type="checkbox" id="settingRecognitionEnabled">
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-name">Recognition similarity threshold</span>
+            <span class="setting-desc">Minimum cosine similarity required to match your enrolled face (default: 0.60).</span>
+          </div>
+          <div class="setting-control">
+            <input type="number" id="settingRecognitionThreshold" min="0.30" max="0.95" step="0.05" value="0.60" style="width: 70px;">
           </div>
         </div>
 

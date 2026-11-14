@@ -155,6 +155,47 @@ function updateDashboard(t) {
   document.getElementById('metricNextCheck').textContent = formatTime(t.next_check_time);
   document.getElementById('metricTotalChecks').textContent = `Total checks: ${t.total_checks}`;
   document.getElementById('deviceCameraName').textContent = t.camera_name || `Camera #${t.camera_index}`;
+
+  // Face recognition metrics
+  const recMode = document.getElementById('metricRecMode');
+  const recEnrolled = document.getElementById('metricRecEnrolled');
+  const recScore = document.getElementById('metricRecScore');
+  const recStatus = document.getElementById('metricRecStatus');
+
+  if (recMode) {
+    if (t.recognition_enabled) {
+      recMode.textContent = 'Owner Recognition Active';
+      recMode.style.color = 'var(--accent-emerald)';
+    } else {
+      recMode.textContent = 'Presence Only Mode';
+      recMode.style.color = 'var(--text-primary)';
+    }
+  }
+
+  if (recEnrolled) {
+    if (t.is_enrolled) {
+      recEnrolled.textContent = 'Owner Profile: Enrolled (512-D MobileFaceNet)';
+      recEnrolled.style.color = 'var(--accent-emerald)';
+    } else {
+      recEnrolled.textContent = 'Owner Profile: Not Enrolled';
+      recEnrolled.style.color = 'var(--text-muted)';
+    }
+  }
+
+  if (recScore && recStatus) {
+    if (t.last_similarity > 0) {
+      const simPct = (t.last_similarity * 100).toFixed(1);
+      const threshPct = (t.recognition_threshold * 100).toFixed(0);
+      const authorized = t.last_recognized === true;
+      recScore.textContent = `${simPct}% (${authorized ? 'Authorized' : 'Unauthorized'})`;
+      recScore.style.color = authorized ? 'var(--accent-emerald)' : 'var(--accent-rose)';
+      recStatus.textContent = `Threshold: ${threshPct}% match required`;
+    } else {
+      recScore.textContent = '--%';
+      recScore.style.color = 'var(--text-primary)';
+      recStatus.textContent = `Threshold: ${(t.recognition_threshold * 100).toFixed(0)}% match required`;
+    }
+  }
 }
 
 // Controls & Actions
@@ -250,6 +291,63 @@ document.getElementById('btnTestDetection').addEventListener('click', async () =
   }
 });
 
+// Face Recognition Operations
+document.getElementById('btnEnrollFace').addEventListener('click', async () => {
+  const out = document.getElementById('recOutput');
+  out.textContent = 'Capturing frame and enrolling your face profile... Please look at the camera.';
+  try {
+    const res = await invoke('enroll_face');
+    if (res.success) {
+      out.textContent = `[SUCCESS] ${res.message}\n` +
+        `Face Confidence: ${res.confidence_percent.toFixed(1)}%\n` +
+        `FaceGuard is now locked to your biometric profile.`;
+      addLogEntry(`Owner face enrolled successfully (${res.confidence_percent.toFixed(1)}% conf)`);
+      pollTelemetry();
+    } else {
+      out.textContent = `[FAILED] ${res.message}`;
+      addLogEntry(`Face enrollment failed: ${res.message}`);
+    }
+  } catch (err) {
+    out.textContent = `[ERROR] Exception during enrollment: ${err}`;
+  }
+});
+
+document.getElementById('btnTestRecognition').addEventListener('click', async () => {
+  const out = document.getElementById('recOutput');
+  out.textContent = 'Analyzing camera frame for facial identity match...';
+  try {
+    const res = await invoke('test_recognition');
+    if (res.success) {
+      out.textContent = `[RECOGNITION TEST RESULT]\n` +
+        `Enrolled: ${res.is_enrolled ? 'YES' : 'NO'}\n` +
+        `Similarity Score: ${res.similarity_percent.toFixed(1)}%\n` +
+        `Threshold Required: ${res.threshold_percent.toFixed(1)}%\n` +
+        `Verdict: ${res.is_recognized ? 'AUTHORIZED OWNER (Match)' : 'STRANGER / UNAUTHORIZED (Mismatch)'}\n` +
+        `Message: ${res.message}`;
+      addLogEntry(`Recognition test: match=${res.is_recognized}, sim=${res.similarity_percent.toFixed(1)}%`);
+      pollTelemetry();
+    } else {
+      out.textContent = `[FAILED] ${res.message}`;
+    }
+  } catch (err) {
+    out.textContent = `[ERROR] Exception during test: ${err}`;
+  }
+});
+
+document.getElementById('btnClearEnrollment').addEventListener('click', async () => {
+  if (!confirm('Are you sure you want to clear your enrolled face profile? The system will revert to general presence mode.')) {
+    return;
+  }
+  try {
+    await invoke('clear_enrolled_face');
+    document.getElementById('recOutput').textContent = 'Enrolled face profile cleared. System reverted to general presence detection.';
+    addLogEntry('Face profile cleared by user');
+    pollTelemetry();
+  } catch (err) {
+    alert(`Failed to clear face profile: ${err}`);
+  }
+});
+
 // Settings Management
 async function loadSettings() {
   try {
@@ -260,6 +358,8 @@ async function loadSettings() {
     document.getElementById('settingThreshold').value = cfg.missing_face_threshold;
     document.getElementById('settingConfidence').value = cfg.confidence_threshold;
     document.getElementById('settingLockEnabled').checked = cfg.lock_on_missing_face;
+    document.getElementById('settingRecognitionEnabled').checked = cfg.recognition_enabled;
+    document.getElementById('settingRecognitionThreshold').value = cfg.recognition_threshold;
     document.getElementById('settingStartWithWindows').checked = cfg.start_with_windows;
     document.getElementById('settingMinimizeToTray').checked = cfg.minimize_to_tray;
 
@@ -295,6 +395,8 @@ document.getElementById('btnSaveSettings').addEventListener('click', async () =>
     confidence_threshold: parseFloat(document.getElementById('settingConfidence').value) || 0.70,
     camera_index: parseInt(document.getElementById('settingCameraSelect').value, 10) || 0,
     lock_on_missing_face: document.getElementById('settingLockEnabled').checked,
+    recognition_enabled: document.getElementById('settingRecognitionEnabled').checked,
+    recognition_threshold: parseFloat(document.getElementById('settingRecognitionThreshold').value) || 0.60,
     start_with_windows: document.getElementById('settingStartWithWindows').checked,
     minimize_to_tray: document.getElementById('settingMinimizeToTray').checked,
   };

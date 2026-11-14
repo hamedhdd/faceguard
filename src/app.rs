@@ -31,6 +31,23 @@ pub struct DetectionTestResult {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnrollmentResult {
+    pub success: bool,
+    pub confidence_percent: f32,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecognitionTestResult {
+    pub success: bool,
+    pub is_recognized: bool,
+    pub similarity_percent: f32,
+    pub threshold_percent: f32,
+    pub is_enrolled: bool,
+    pub message: String,
+}
+
 #[tauri::command]
 pub fn get_telemetry(state: State<'_, AppContainer>) -> TelemetrySnapshot {
     state.controller.get_telemetry()
@@ -138,6 +155,68 @@ pub fn test_detection(state: State<'_, AppContainer>) -> Result<DetectionTestRes
             inference_ms: 0.0,
             primary_face: None,
             message: format!("Detection test failed: {e}"),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn enroll_face(state: State<'_, AppContainer>) -> Result<EnrollmentResult, String> {
+    match state.controller.enroll_current_face() {
+        Ok(conf) => Ok(EnrollmentResult {
+            success: true,
+            confidence_percent: conf * 100.0,
+            message: format!(
+                "Owner face enrolled successfully (Confidence: {:.1}%). Face recognition is now active!",
+                conf * 100.0
+            ),
+        }),
+        Err(e) => Ok(EnrollmentResult {
+            success: false,
+            confidence_percent: 0.0,
+            message: format!("Enrollment failed: {e}"),
+        }),
+    }
+}
+
+#[tauri::command]
+pub fn clear_enrolled_face(state: State<'_, AppContainer>) -> Result<(), String> {
+    state.controller.clear_enrolled_face()
+}
+
+#[tauri::command]
+pub fn test_recognition(state: State<'_, AppContainer>) -> Result<RecognitionTestResult, String> {
+    match state.controller.test_recognition() {
+        Ok(summary) => Ok(RecognitionTestResult {
+            success: true,
+            is_recognized: summary.is_recognized,
+            similarity_percent: summary.similarity_score * 100.0,
+            threshold_percent: summary.threshold * 100.0,
+            is_enrolled: summary.is_enrolled,
+            message: if summary.is_enrolled {
+                if summary.is_recognized {
+                    format!(
+                        "Owner face recognized! Similarity: {:.1}% (Threshold: {:.1}%)",
+                        summary.similarity_score * 100.0,
+                        summary.threshold * 100.0
+                    )
+                } else {
+                    format!(
+                        "Unrecognized face or stranger! Similarity: {:.1}% < Threshold: {:.1}%",
+                        summary.similarity_score * 100.0,
+                        summary.threshold * 100.0
+                    )
+                }
+            } else {
+                "No face profile currently enrolled. Please enroll your face first.".to_string()
+            },
+        }),
+        Err(e) => Ok(RecognitionTestResult {
+            success: false,
+            is_recognized: false,
+            similarity_percent: 0.0,
+            threshold_percent: 0.0,
+            is_enrolled: false,
+            message: format!("Recognition test failed: {e}"),
         }),
     }
 }

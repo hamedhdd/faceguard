@@ -11,9 +11,11 @@ FaceGuard is a lightweight, privacy-focused, production-ready Windows desktop ap
 
 ## Key Highlights
 
-- **Zero Facial Registration or Setup**: Detects human face presence rather than personal identity. You do not need to register, scan, or enroll your face beforehand; it works immediately out of the box.
+- **Dual-Mode Protection**:
+  - **Owner Face Identity Recognition**: Leverages local MobileFaceNet (`models/face_recognition.onnx`, 13.6 MB) via pure-Rust `tract-onnx` to extract 512-dimensional facial embedding vectors. Automatically locks Windows if a stranger or unrecognized person sits in front of the display.
+  - **General Presence Mode**: Works out of the box with zero setup or enrollment, keeping the workstation unlocked whenever any human face is present.
 - **Hardware Agnostic**: Works with ordinary 2D webcams and built-in laptop cameras (DirectShow / Media Foundation). No Windows Hello, infrared, or depth sensors required.
-- **Privacy-Preserving**: 100% local CPU inference using a lightweight ONNX model via `tract-onnx`. Zero frames or biometric data saved or transmitted. Frames are immediately dropped from memory after single-frame inference.
+- **Privacy-Preserving**: 100% local CPU inference using lightweight ONNX models via `tract-onnx`. Zero frames or biometric data saved or transmitted. Frames are immediately dropped from memory after single-frame inference.
 - **Zero Continuous Streaming**: The camera is activated strictly for a single frame every 20 seconds (configurable) and released immediately between checks.
 - **Native Windows Lock**: Integrates natively with `LockWorkStation()` via the Windows API.
 - **Critical Locked Standby**: Stops the scheduler, releases all camera hardware handles, and enters an idle `LockedStandby` state upon lock.
@@ -33,7 +35,8 @@ faceguard/
 ├── tauri.conf.json             # Desktop application metadata & window geometry
 ├── models/
 │   ├── face_detection.onnx     # Pretrained UltraFace RFB-320 ONNX model
-│   └── face_detection_yunet.onnx # Pretrained YuNet ONNX model
+│   ├── face_detection_yunet.onnx # Pretrained YuNet ONNX model
+│   └── face_recognition.onnx   # Pretrained InsightFace MobileFaceNet 512-D model
 ├── resources/
 │   └── icons/                  # Dynamic tray state & application icons
 ├── dist/                       # Embedded unslop UI assets (HTML, CSS, JS)
@@ -51,7 +54,8 @@ faceguard/
 │   ├── detection/
 │   │   ├── mod.rs
 │   │   ├── model.rs            # Bounding box & detection data structures
-│   │   └── detector.rs         # Tract-ONNX inference & mock detector
+│   │   ├── detector.rs         # Tract-ONNX inference & mock detector
+│   │   └── recognition.rs      # MobileFaceNet embedding & cosine similarity
 │   ├── windows/
 │   │   ├── mod.rs
 │   │   ├── lock.rs             # Native LockWorkStation() & mock locker

@@ -1,6 +1,6 @@
 use faceguard_core::camera::{CameraCapture, MockCameraCapture};
 use faceguard_core::config::AppConfig;
-use faceguard_core::detection::{FaceDetector, MockFaceDetector};
+use faceguard_core::detection::{FaceDetector, FaceRecognizer, MockFaceDetector, MockFaceRecognizer};
 use faceguard_core::monitoring::MonitoringController;
 use faceguard_core::state::{is_valid_transition, AppState, StateTracker};
 use faceguard_core::windows::{MockSessionNotifier, MockWindowsLocker, SessionNotifier, WorkstationLocker};
@@ -16,6 +16,7 @@ fn create_test_fixture(
     Arc<StateTracker>,
     Arc<MockCameraCapture>,
     Arc<MockFaceDetector>,
+    Arc<MockFaceRecognizer>,
     Arc<MockWindowsLocker>,
     Arc<MockSessionNotifier>,
 ) {
@@ -29,6 +30,7 @@ fn create_test_fixture(
     let state_tracker = Arc::new(StateTracker::new(AppState::Monitoring));
     let camera = Arc::new(MockCameraCapture::new());
     let detector = Arc::new(MockFaceDetector::new(face_present, confidence));
+    let recognizer = Arc::new(MockFaceRecognizer::new(1.0));
     let locker = Arc::new(MockWindowsLocker::new());
     let notifier = Arc::new(MockSessionNotifier::new());
 
@@ -37,11 +39,36 @@ fn create_test_fixture(
         Arc::clone(&state_tracker),
         Arc::clone(&camera) as Arc<dyn CameraCapture>,
         Arc::clone(&detector) as Arc<dyn FaceDetector>,
+        Arc::clone(&recognizer) as Arc<dyn FaceRecognizer>,
         Arc::clone(&locker) as Arc<dyn WorkstationLocker>,
         Arc::clone(&notifier) as Arc<dyn SessionNotifier>,
     );
 
-    (controller, state_tracker, camera, detector, locker, notifier)
+    (controller, state_tracker, camera, detector, recognizer, locker, notifier)
+}
+
+#[test]
+fn test_tract_face_recognition_loading() {
+    use tract_onnx::prelude::*;
+    let model_path = std::path::PathBuf::from("models/face_recognition.onnx");
+    if model_path.exists() {
+        let model = tract_onnx::onnx()
+            .model_for_path(&model_path)
+            .expect("Failed to read ONNX model")
+            .with_input_fact(0, f32::fact([1, 3, 112, 112]).into())
+            .expect("Failed to set input fact")
+            .into_optimized()
+            .expect("Failed to optimize model")
+            .into_runnable()
+            .expect("Failed to make model runnable");
+
+        let tract_tensor = Tensor::zero::<f32>(&[1, 3, 112, 112]).unwrap();
+        let result = model.run(tvec!(tract_tensor.into())).expect("Model inference failed");
+        assert_eq!(result.len(), 1);
+        let out_view = result[0].to_array_view::<f32>().expect("Failed to view output tensor");
+        assert_eq!(out_view.shape(), &[1, 512]);
+        println!("Face recognition (MobileFaceNet 512-D) inference verified! Output shape: {:?}", out_view.shape());
+    }
 }
 
 #[test]
@@ -56,7 +83,10 @@ fn test_state_machine_transitions() {
     // Valid transition: Monitoring -> FaceDetected
     assert!(tracker.transition(AppState::FaceDetected).unwrap());
 
-    // Valid transition: FaceDetected -> FaceMissing
+    // Valid transition: FaceDetected -> Monitoring
+    assert!(tracker.transition(AppState::Monitoring).unwrap());
+
+    // Valid transition: Monitoring -> FaceMissing
     assert!(tracker.transition(AppState::FaceMissing).unwrap());
 
     // Valid transition: FaceMissing -> LockRequested
@@ -86,7 +116,7 @@ fn test_state_machine_transitions() {
 #[test]
 fn test_missing_face_threshold_logic() {
     // Threshold = 2 failed checks before lock
-    let (controller, _state, _cam, detector, locker, _notifier) =
+    let (controller, _state, _cam, detector, _rec, locker, _notifier) =
         create_test_fixture(false, 0.20, 2, 20);
 
     assert_eq!(locker.lock_count(), 0);
@@ -124,7 +154,7 @@ fn test_missing_face_threshold_logic() {
 
 #[test]
 fn test_camera_error_handling() {
-    let (controller, _state, camera, _detector, locker, _notifier) =
+    let (controller, _state, camera, _detector, _rec, locker, _notifier) =
         create_test_fixture(false, 0.0, 2, 20);
 
     // Simulate camera hardware disconnect or occupancy error
@@ -149,7 +179,7 @@ fn test_camera_error_handling() {
 
 #[test]
 fn test_kill_switch_behavior() {
-    let (controller, _state, _cam, _detector, locker, _notifier) =
+    let (controller, _state, _cam, _detector, _rec, locker, _notifier) =
         create_test_fixture(false, 0.0, 1, 20);
 
     // Activate Kill Switch
@@ -170,7 +200,7 @@ fn test_kill_switch_behavior() {
 
 #[test]
 fn test_scheduler_cancellation() {
-    let (controller, _state, _cam, _detector, _locker, _notifier) =
+    let (controller, _state, _cam, _detector, _rec, _locker, _notifier) =
         create_test_fixture(true, 0.90, 2, 1);
 
     controller.start_scheduler_loop();
@@ -187,7 +217,7 @@ fn test_scheduler_cancellation() {
 
 #[test]
 fn test_windows_lock_request_abstraction() {
-    let (controller, _state, _cam, _detector, locker, _notifier) =
+    let (controller, _state, _cam, _detector, _rec, locker, _notifier) =
         create_test_fixture(true, 0.90, 2, 20);
 
     assert_eq!(locker.lock_count(), 0);
@@ -201,7 +231,7 @@ fn test_windows_lock_request_abstraction() {
 
 #[test]
 fn test_locked_standby_behavior() {
-    let (controller, state, _cam, _detector, _locker, _notifier) =
+    let (controller, state, _cam, _detector, _rec, _locker, _notifier) =
         create_test_fixture(true, 0.90, 2, 20);
 
     state.force_set(AppState::LockedStandby);
@@ -215,7 +245,7 @@ fn test_locked_standby_behavior() {
 
 #[test]
 fn test_resume_after_session_unlock() {
-    let (controller, state, _cam, detector, _locker, notifier) =
+    let (controller, state, _cam, detector, _rec, _locker, notifier) =
         create_test_fixture(true, 0.95, 2, 20);
 
     // Simulate Windows workstation lock
@@ -233,6 +263,84 @@ fn test_resume_after_session_unlock() {
 }
 
 #[test]
+fn test_face_recognition_owner_match() {
+    let (controller, _state, _cam, detector, recognizer, locker, _notifier) =
+        create_test_fixture(true, 0.95, 2, 20);
+
+    // Configure enrolled owner face
+    {
+        let mut cfg = controller.config.write();
+        cfg.enrolled_face = Some(vec![0.1; 512]);
+        cfg.recognition_enabled = true;
+        cfg.recognition_threshold = 0.60;
+    }
+
+    // Owner face is in front of camera with high similarity (0.92)
+    detector.set_face_present(true);
+    recognizer.set_similarity(0.92);
+
+    let res = controller.perform_check().unwrap();
+    assert!(res.is_face_present);
+    let rec = res.recognition.unwrap();
+    assert!(rec.is_recognized);
+    assert!((rec.similarity_score - 0.92).abs() < 1e-4);
+
+    assert_eq!(controller.get_telemetry().consecutive_failed_checks, 0);
+    assert_eq!(locker.lock_count(), 0);
+}
+
+#[test]
+fn test_face_recognition_stranger_lock() {
+    let (controller, _state, _cam, detector, recognizer, locker, _notifier) =
+        create_test_fixture(true, 0.95, 2, 20);
+
+    // Configure enrolled owner face
+    {
+        let mut cfg = controller.config.write();
+        cfg.enrolled_face = Some(vec![0.1; 512]);
+        cfg.recognition_enabled = true;
+        cfg.recognition_threshold = 0.60;
+    }
+
+    // Stranger face in front of camera: face IS present (95%), but similarity is low (0.25 < 0.60)
+    detector.set_face_present(true);
+    recognizer.set_similarity(0.25);
+
+    // Check 1: Stranger detected -> treated as unauthorized absence
+    let res1 = controller.perform_check().unwrap();
+    assert!(res1.is_face_present);
+    let rec1 = res1.recognition.unwrap();
+    assert!(!rec1.is_recognized);
+    assert_eq!(controller.get_telemetry().consecutive_failed_checks, 1);
+    assert_eq!(locker.lock_count(), 0);
+
+    // Check 2: Stranger still there -> threshold 2 reached -> Lock Windows!
+    let _ = controller.perform_check().unwrap();
+    assert_eq!(locker.lock_count(), 1);
+    assert_eq!(controller.get_telemetry().state, AppState::LockedStandby);
+}
+
+#[test]
+fn test_face_enrollment_and_clear() {
+    let (controller, _state, _cam, detector, _rec, _locker, _notifier) =
+        create_test_fixture(true, 0.90, 2, 20);
+
+    // Face present -> enroll should succeed
+    detector.set_face_present(true);
+    let enroll_res = controller.enroll_current_face();
+    assert!(enroll_res.is_ok());
+
+    assert!(controller.config.read().enrolled_face.is_some());
+    assert!(controller.config.read().recognition_enabled);
+
+    // Now clear enrollment
+    let clear_res = controller.clear_enrolled_face();
+    assert!(clear_res.is_ok());
+    assert!(controller.config.read().enrolled_face.is_none());
+    assert!(!controller.config.read().recognition_enabled);
+}
+
+#[test]
 fn test_config_validation() {
     let mut config = AppConfig {
         enabled: true,
@@ -246,6 +354,9 @@ fn test_config_validation() {
         notifications_enabled: true,
         lock_on_missing_face: true,
         grace_period_seconds: 500,     // Invalid high (>300)
+        recognition_enabled: false,
+        recognition_threshold: 1.5,    // Invalid high (>0.99)
+        enrolled_face: None,
     };
 
     config.validate();
@@ -255,6 +366,7 @@ fn test_config_validation() {
     assert_eq!(config.confidence_threshold, 0.99);
     assert_eq!(config.minimum_face_size, 16);
     assert_eq!(config.grace_period_seconds, 300);
+    assert_eq!(config.recognition_threshold, 0.99);
 
     // Test JSON serialization & deserialization
     let json = serde_json::to_string(&config).unwrap();

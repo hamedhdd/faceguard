@@ -67,11 +67,23 @@ fn main() {
     let locker = Arc::new(NativeWindowsLocker::new());
     let session_notifier = Arc::new(WindowsSessionNotifier::new());
 
+    let recognizer = match detection::OnnxFaceRecognizer::new(None as Option<&str>) {
+        Ok(r) => {
+            log::info!("Face recognition engine initialized successfully.");
+            Arc::new(r) as Arc<dyn detection::FaceRecognizer>
+        }
+        Err(e) => {
+            log::warn!("Could not load face recognition model ({e}), falling back to mock recognizer");
+            Arc::new(detection::MockFaceRecognizer::new(0.0)) as Arc<dyn detection::FaceRecognizer>
+        }
+    };
+
     let controller = MonitoringController::new(
         config.clone(),
         Arc::clone(&state_tracker),
         Arc::clone(&camera_backend) as Arc<dyn camera::CameraCapture>,
         detector,
+        recognizer,
         locker,
         session_notifier,
     );
@@ -149,6 +161,9 @@ fn main() {
             app::test_detection,
             app::set_autostart,
             app::get_autostart,
+            app::enroll_face,
+            app::clear_enrolled_face,
+            app::test_recognition,
         ])
         .run(tauri::generate_context!())
         .expect("Error while running FaceGuard application");

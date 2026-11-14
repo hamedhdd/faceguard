@@ -174,6 +174,7 @@ impl FaceDetector for OnnxFaceDetector {
             primary_face,
             inference_duration_ms: duration_ms,
             timestamp: chrono::Local::now(),
+            recognition: None,
         })
     }
 }
@@ -242,6 +243,7 @@ impl FaceDetector for MockFaceDetector {
             primary_face,
             inference_duration_ms: 12.5,
             timestamp: chrono::Local::now(),
+            recognition: None,
         })
     }
 }

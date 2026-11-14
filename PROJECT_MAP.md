@@ -33,7 +33,8 @@ faceguard/
 │   ├── detection/
 │   │   ├── mod.rs                   # Face detection module exports
 │   │   ├── model.rs                 # Face bounding boxes, confidence, and summary structures
-│   │   └── detector.rs              # Tract-ONNX inference implementation & mock detector
+│   │   ├── detector.rs              # Tract-ONNX inference implementation & mock detector
+│   │   └── recognition.rs           # MobileFaceNet 512-D embedding extraction & cosine similarity
 │   ├── windows/
 │   │   ├── mod.rs                   # Windows integration exports
 │   │   ├── lock.rs                  # Native LockWorkStation() implementation & mock locker
@@ -46,7 +47,7 @@ faceguard/
 │       ├── mod.rs                   # UI module exports
 │       └── tray.rs                  # Dynamic system tray icon manager and context menu
 └── tests/
-    └── integration_tests.rs         # Automated test suite (9 test suites)
+    └── integration_tests.rs         # Automated test suite (13 test suites)
 ```
 
 ---
@@ -111,6 +112,9 @@ All IPC endpoints are invoked via `window.__TAURI__.core.invoke(command, args)`:
 | `list_cameras`      | None | `Vec<CameraDeviceDescription>` | Enumerates available video capture devices |
 | `test_camera`       | None | `CameraTestResult` | One-shot hardware capture test (resolution, format) |
 | `test_detection`    | None | `DetectionTestResult` | One-shot face presence verification & inference latency |
+| `enroll_face`       | None | `EnrollmentResult` | Captures frame, extracts 512-D embedding, and enrolls owner |
+| `clear_enrolled_face`| None | `Result<(), String>` | Removes enrolled profile and reverts to general presence |
+| `test_recognition`  | None | `RecognitionTestResult` | Compares live webcam frame against enrolled owner profile |
 | `set_autostart`     | `{ enable: bool }` | `Result<(), String>` | Modifies `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` |
 | `get_autostart`     | None | `bool` | Checks if Windows startup registry key exists |
 
@@ -132,7 +136,10 @@ Stored at `%APPDATA%\FaceGuard\config.json`:
   "minimize_to_tray": true,
   "notifications_enabled": true,
   "lock_on_missing_face": true,
-  "grace_period_seconds": 0
+  "grace_period_seconds": 0,
+  "recognition_enabled": false,
+  "recognition_threshold": 0.60,
+  "enrolled_face": null
 }
 ```
 
