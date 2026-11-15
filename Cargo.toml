@@ -1,6 +1,6 @@
 [package]
 name = "faceguard"
-version = "1.0.0"
+version = "1.1.0"
 description = "FaceGuard — Windows Face Presence Auto-Lock"
 authors = ["Hamed <hamedhdd@gmail.com>"]
 edition = "2021"
