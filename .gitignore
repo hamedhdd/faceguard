@@ -17,3 +17,4 @@ Thumbs.db
 *.log
 *.tmp
 node_modules/
+release_staging/
