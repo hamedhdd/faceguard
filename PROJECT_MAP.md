@@ -10,9 +10,14 @@ faceguard/
 ├── README.md                        # Project documentation, setup guide, architecture overview
 ├── CHANGELOG.md                     # Semantic versioning changelog adhering to Keep a Changelog
 ├── PROJECT_MAP.md                   # Living architectural directory tree and telemetry map
+├── capabilities/
+│   └── default.json                 # Tauri 2 security permissions & command capability mapping
 ├── models/
 │   ├── face_detection.onnx          # Pretrained UltraFace RFB-320 ONNX neural network model
-│   └── face_detection_yunet.onnx    # Pretrained YuNet ONNX neural network model
+│   ├── face_detection_yunet.onnx    # Pretrained YuNet ONNX neural network model
+│   └── face_recognition.onnx      # Pretrained MobileFaceNet ONNX 512-D embedding model
+├── permissions/
+│   └── custom-commands.toml         # Tauri 2 custom command schema permissions
 ├── resources/
 │   └── icons/                       # Pixel-perfect PNG and ICO assets for app & dynamic tray states
 ├── dist/                            # Self-contained, offline unslop frontend bundle
@@ -47,7 +52,7 @@ faceguard/
 │       ├── mod.rs                   # UI module exports
 │       └── tray.rs                  # Dynamic system tray icon manager and context menu
 └── tests/
-    └── integration_tests.rs         # Automated test suite (13 test suites)
+    └── integration_tests.rs         # Automated test suite (17 comprehensive test suites)
 ```
 
 ---
